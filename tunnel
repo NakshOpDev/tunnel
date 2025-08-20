@@ -1,11 +1,5 @@
 #!/bin/bash
 
-#==============================================================================#
-#                                                                              #
-#                                 🚇 Tunnelsmith 🚇                              #
-#           A cool and friendly script for creating reverse SSH tunnels.       #
-#                                                                              #
-#==============================================================================#
 
 # --- Configuration ---
 # You can change these values to match your remote server details.
@@ -38,7 +32,7 @@ EMOJI_WAVE="👋"
 
 # Function to display the help/usage message
 usage() {
-    echo -e "${C_WHITE}🚇 Tunnelsmith - a friendly tunnel manager${C_RESET}"
+    echo -e "${C_WHITE}🚇 Strelix Cloud - a friendly tunnel creator${C_RESET}"
     echo -e "---------------------------------------------------"
     echo -e "${C_YELLOW}Usage:${C_RESET} ${C_CYAN}$0 ${C_PURPLE}<command> [options]${C_RESET}\n"
     echo -e "${C_PURPLE}Commands:${C_RESET}"
@@ -48,7 +42,7 @@ usage() {
     echo -e "  ${C_CYAN}kill <pid>${C_RESET}          ${EMOJI_STOP} Stop a specific tunnel by its PID."
     echo -e "                         Example: ${C_CYAN}$0 kill 12345${C_RESET}\n"
     echo -e "  ${C_CYAN}killall${C_RESET}             ${EMOJI_STOP} Stop all active tunnels.\n"
-    echo -e "  ${C_CYAN}help${C_RESET}                ${EMOJI_WAVE} Show this help message."
+    echo -e "  ${C_CYAN}help${C_RESET}                ${EMOJI_WAVE} Show this help messe."
     echo -e "---------------------------------------------------"
 }
 

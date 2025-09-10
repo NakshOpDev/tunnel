@@ -3,10 +3,10 @@
 
 # --- Configuration ---
 # You can change these values to match your remote server details.
-REMOTE_HOST="ssh.strelix.xyz"
-REMOTE_USER="root"
-SSH_PORT="65535"
-
+DB_FILE="/tmp/port_tunnels.db"
+SERVER="89.168.49.205"
+USER="tunnel"
+PASS="Lw-T72q)L735Rwz+Iv"
 # --- Colors and Emojis ---
 # Making the output vibrant and clear!
 C_RESET='\033[0m'

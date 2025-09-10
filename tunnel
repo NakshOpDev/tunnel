@@ -1,172 +1,124 @@
 #!/bin/bash
 
-
-# --- Configuration ---
-# You can change these values to match your remote server details.
+# ========= CONFIG =========
 DB_FILE="/tmp/port_tunnels.db"
 SERVER="89.168.49.205"
 USER="tunnel"
 PASS="Lw-T72q)L735Rwz+Iv"
-# --- Colors and Emojis ---
-# Making the output vibrant and clear!
-C_RESET='\033[0m'
-C_RED='\033[0;31m'
-C_GREEN='\033[0;32m'
-C_YELLOW='\033[0;33m'
-C_BLUE='\033[0;34m'
-C_PURPLE='\033[0;35m'
-C_CYAN='\033[0;36m'
-C_WHITE='\033[1;37m'
+# ==========================
 
-EMOJI_TUNNEL="🚇"
-EMOJI_SPARKLE="✨"
-EMOJI_GEAR="⚙️"
-EMOJI_LINK="🔗"
-EMOJI_SUCCESS="✅"
-EMOJI_ERROR="❌"
-EMOJI_STOP="🛑"
-EMOJI_LIST="📋"
-EMOJI_WAVE="👋"
+mkdir -p /tmp
+touch "$DB_FILE"
 
-# --- Helper Functions ---
+# 🎨 Colors
+RED="\e[31m"
+GRN="\e[32m"
+YEL="\e[33m"
+CYN="\e[36m"
+RST="\e[0m"
 
-# Function to display the help/usage message
-usage() {
-    echo -e "${C_WHITE}🚇 Strelix Cloud - a friendly tunnel creator${C_RESET}"
-    echo -e "---------------------------------------------------"
-    echo -e "${C_YELLOW}Usage:${C_RESET} ${C_CYAN}$0 ${C_PURPLE}<command> [options]${C_RESET}\n"
-    echo -e "${C_PURPLE}Commands:${C_RESET}"
-    echo -e "  ${C_CYAN}make <local_port>${C_RESET}   ${EMOJI_GEAR} Create a new tunnel from a local port."
-    echo -e "                         Example: ${C_CYAN}$0 make 8080${C_RESET}\n"
-    echo -e "  ${C_CYAN}list${C_RESET}                ${EMOJI_LIST} List all active tunnels created by this script.\n"
-    echo -e "  ${C_CYAN}kill <pid>${C_RESET}          ${EMOJI_STOP} Stop a specific tunnel by its PID."
-    echo -e "                         Example: ${C_CYAN}$0 kill 12345${C_RESET}\n"
-    echo -e "  ${C_CYAN}killall${C_RESET}             ${EMOJI_STOP} Stop all active tunnels.\n"
-    echo -e "  ${C_CYAN}help${C_RESET}                ${EMOJI_WAVE} Show this help messe."
-    echo -e "---------------------------------------------------"
+banner() {
+  echo -e "${CYN}=============================="
+  echo -e "     StrelixCloud"
+  echo -e "==============================${RST}"
 }
 
-# --- Main Logic ---
+add_tunnel() {
+  LOCAL_PORT=$1
+  TMPFILE=$(mktemp)
 
-# Check for a command
-if [ -z "$1" ]; then
-    usage
-    exit 1
-fi
+  sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
+  SSH_PID=$!
 
+  # wait up to 5s for port allocation
+  for i in {1..10}; do
+    if grep -q "Allocated port" "$TMPFILE"; then break; fi
+    sleep 0.5
+  done
+
+  if grep -q "Allocated port" "$TMPFILE"; then
+    REMOTE_PORT=$(grep "Allocated port" "$TMPFILE" | grep -oP '\d{4,5}' | head -n1)
+    echo "$LOCAL_PORT:$REMOTE_PORT:$SSH_PID" >> "$DB_FILE"
+    echo -e "✅ ${GRN}Tunnel created:${RST} localhost:${YEL}$LOCAL_PORT${RST} ➜ ${CYN}$SERVER:$REMOTE_PORT${RST} (pid $SSH_PID)"
+  else
+    echo -e "❌ ${RED}Tunnel failed!${RST} reason:"
+    grep -v "^Warning:" "$TMPFILE"
+    kill "$SSH_PID" 2>/dev/null
+  fi
+  rm -f "$TMPFILE"
+}
+
+stop_tunnel() {
+  PORT=$1
+  TMP=$(mktemp)
+  FOUND=0
+  while IFS=: read -r LPORT RPORT PID; do
+    if [[ "$LPORT" == "$PORT" ]]; then
+      kill "$PID" 2>/dev/null
+      echo -e "🛑 ${RED}Stopped tunnel:${RST} localhost:$LPORT (remote $SERVER:$RPORT)"
+      FOUND=1
+    else
+      echo "$LPORT:$RPORT:$PID" >> "$TMP"
+    fi
+  done < "$DB_FILE"
+  mv "$TMP" "$DB_FILE"
+  [[ $FOUND -eq 0 ]] && echo -e "⚠️ ${YEL}No tunnel found for port $PORT${RST}"
+}
+
+stop_all() {
+  while IFS=: read -r LPORT RPORT PID; do
+    kill "$PID" 2>/dev/null
+    echo -e "🛑 ${RED}Killed tunnel:${RST} localhost:$LPORT (remote $SERVER:$RPORT)"
+  done < "$DB_FILE"
+
+  > "$DB_FILE"
+}
+
+list_tunnels() {
+  if [[ ! -s "$DB_FILE" ]]; then
+    echo -e "ℹ️ ${YEL}No active tunnels right now.${RST}"
+    return
+  fi
+  echo -e "🔁 ${GRN}Active tunnels:${RST}"
+  while IFS=: read -r LPORT RPORT PID; do
+    if ps -p "$PID" > /dev/null 2>&1; then
+      echo -e " • ${CYN}$SERVER:$RPORT${RST} ➜ localhost:${YEL}$LPORT${RST} (pid $PID)"
+    else
+      echo -e " • ${CYN}$SERVER:$RPORT${RST} ➜ localhost:${YEL}$LPORT${RST} ${RED}(dead)${RST}"
+    fi
+  done < "$DB_FILE"
+}
+
+reset() {
+  echo -ne "⚠️ ${YEL}This will kill ALL ssh processes & wipe DB. Continue? (y/n): ${RST}"
+  read -r CONFIRM
+  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    pkill -9 ssh 2>/dev/null
+    > "$DB_FILE"
+    echo -e "🧼 ${GRN}Reset complete${RST}"
+  else
+    echo -e "🚫 ${RED}Reset cancelled${RST}"
+  fi
+}
+
+print_help() {
+  banner
+  echo "usage:"
+  echo "  port add <local_port>     - create tunnel (remote port auto-alloc)"
+  echo "  port stop <local_port>    - stop specific tunnel"
+  echo "  port stop all             - kill all tunnels"
+  echo "  port list tunnels         - show active tunnels"
+  echo "  port reset                - kill ALL ssh procs + wipe DB"
+  echo "  port help                 - show this help"
+}
+
+# ========= Main =========
 case "$1" in
-    make)
-        LOCAL_PORT=$2
-        # Validate that a local port was provided and is a number
-        if [[ -z "$LOCAL_PORT" || ! "$LOCAL_PORT" =~ ^[0-9]+$ ]]; then
-            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: You must provide a valid local port number.${C_RESET}"
-            echo -e "Example: ${C_CYAN}$0 make 80${C_RESET}\n"
-            exit 1
-        fi
-
-        # Generate a random remote port between 10000 and 65535
-        REMOTE_PORT=$(( RANDOM % 55535 + 10000 ))
-
-        echo -e "\n${EMOJI_TUNNEL} ${C_BLUE}Forging a new tunnel...${C_RESET}"
-        echo -e "${EMOJI_GEAR} ${C_YELLOW}Preparing to connect to ${C_WHITE}${REMOTE_HOST}${C_RESET}"
-        echo -e "${EMOJI_LINK} ${C_CYAN}Forwarding:${C_RESET} Local Port ${C_WHITE}${LOCAL_PORT}${C_RESET} -> ${C_WHITE}${REMOTE_HOST}:${REMOTE_PORT}${C_RESET}\n"
-
-        # The magic command. It runs in the background and won't die when you close the terminal.
-        # -o StrictHostKeyChecking=no: Automatically adds the host key to known_hosts to prevent prompts.
-        # -o ExitOnForwardFailure=yes: Fails if the remote port is already in use (good for feedback!)
-        # -o ServerAliveInterval=60: Keeps the connection from timing out.
-        nohup ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 \
-            -N -R ${REMOTE_PORT}:localhost:${LOCAL_PORT} \
-            ${REMOTE_USER}@${REMOTE_HOST} -p ${SSH_PORT} &> /tmp/tunnel_${REMOTE_PORT}.log &
-
-        PID=$!
-        
-        # Give it a moment to establish or fail
-        sleep 2
-
-        # Check if the process is still running
-        if ps -p $PID > /dev/null; then
-            echo -e "${EMOJI_SUCCESS} ${C_GREEN}Success! Tunnel is active.${C_RESET}"
-            echo -e "  ${C_WHITE}PID:${C_RESET} ${C_YELLOW}${PID}${C_RESET}"
-            echo -e "  ${C_WHITE}URL:${C_RESET} ${C_CYAN}http://${REMOTE_HOST}:${REMOTE_PORT}${C_RESET} (if forwarding a web server)"
-            echo -e "  ${C_WHITE}Log:${C_RESET} /tmp/tunnel_${REMOTE_PORT}.log"
-            echo -e "\n${EMOJI_STOP} To stop this tunnel, run: ${C_PURPLE}tunnel kill ${PID}${C_RESET}\n"
-        else
-            echo -e "${EMOJI_ERROR} ${C_RED}Oh no! The tunnel failed to start.${C_RESET}"
-            echo -e "  This could be due to a password failure, a taken port, or a connection issue."
-            echo -e "  Check the log for details: ${C_YELLOW}cat /tmp/tunnel_${REMOTE_PORT}.log${C_RESET}\n"
-            # Clean up the log if it's empty
-            [ ! -s "/tmp/tunnel_${REMOTE_PORT}.log" ] && rm "/tmp/tunnel_${REMOTE_PORT}.log"
-        fi
-        ;;
-
-    list)
-        echo -e "\n${EMOJI_LIST} ${C_BLUE}Searching for active tunnels to ${C_WHITE}${REMOTE_HOST}${C_RESET}..."
-        
-        # pgrep is great for this. -a shows the full command line.
-        PIDS=$(pgrep -af "ssh.*-R.*${REMOTE_HOST}")
-        
-        if [ -n "$PIDS" ]; then
-            echo -e "------------------------------------------------------------------"
-            echo -e "${C_WHITE}PID\t\tREMOTE PORT\t\tFORWARDED FROM (Local Port)${C_RESET}"
-            echo -e "------------------------------------------------------------------"
-            # Use a while loop to parse the output nicely
-            while read -r line; do
-                pid=$(echo "$line" | awk '{print $1}')
-                # Extract ports using some regex magic
-                remote_p=$(echo "$line" | sed -n 's/.*-R \([0-9]*\):.*/\1/p')
-                local_p=$(echo "$line" | sed -n 's/.*localhost:\([0-9]*\).*/\1/p')
-                echo -e "${C_YELLOW}${pid}${C_RESET}\t\t${C_CYAN}${remote_p}${C_RESET}\t\t\t${C_PURPLE}${local_p}${C_RESET}"
-            done <<< "$PIDS"
-            echo -e "------------------------------------------------------------------\n"
-        else
-            echo -e "${EMOJI_SPARKLE} ${C_GREEN}No active tunnels found. Your network is quiet!${C_RESET}\n"
-        fi
-        ;;
-
-    kill)
-        PID_TO_KILL=$2
-        if [[ -z "$PID_TO_KILL" || ! "$PID_TO_KILL" =~ ^[0-9]+$ ]]; then
-            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: You must provide a valid PID to kill.${C_RESET}"
-            echo -e "Find PIDs by running: ${C_CYAN}$0 list${C_RESET}\n"
-            exit 1
-        fi
-
-        # Check if the process exists before trying to kill it
-        if ps -p $PID_TO_KILL > /dev/null; then
-            kill $PID_TO_KILL
-            echo -e "\n${EMOJI_STOP} ${C_GREEN}Signal sent to terminate tunnel with PID ${C_YELLOW}${PID_TO_KILL}${C_RESET}.${C_RESET}\n"
-        else
-            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: No process found with PID ${C_YELLOW}${PID_TO_KILL}${C_RESET}.${C_RESET}\n"
-        fi
-        ;;
-
-    killall)
-        echo -e "\n${EMOJI_STOP} ${C_BLUE}Preparing to terminate all tunnels to ${C_WHITE}${REMOTE_HOST}${C_RESET}..."
-        PIDS_TO_KILL=$(pgrep -f "ssh.*-R.*${REMOTE_HOST}")
-        
-        if [ -n "$PIDS_TO_KILL" ]; then
-            echo -e "${C_YELLOW}This will kill the following processes:${C_RESET}"
-            # Show the processes before killing them
-            pgrep -af "ssh.*-R.*${REMOTE_HOST}"
-            read -p "$(echo -e ${C_RED}"Are you sure? [y/N] "${C_RESET})" confirm
-            if [[ "$confirm" =~ ^[yY](es)?$ ]]; then
-                kill $PIDS_TO_KILL
-                echo -e "\n${EMOJI_SUCCESS} ${C_GREEN}All tunnels terminated.${C_RESET}\n"
-            else
-                echo -e "\n${C_YELLOW}Operation cancelled.${C_RESET}\n"
-            fi
-        else
-            echo -e "${EMOJI_SPARKLE} ${C_GREEN}No active tunnels to kill.${C_RESET}\n"
-        fi
-        ;;
-
-    help)
-        usage
-        ;;
-
-    *)
-        usage
-        exit 1
-        ;;
+  add)   [[ -n "$2" ]] && add_tunnel "$2" || echo "usage: port add <local_port>" ;;
+  stop)  [[ "$2" == "all" ]] && stop_all || [[ -n "$2" ]] && stop_tunnel "$2" || echo "usage: port stop <local_port|all>" ;;
+  list)  [[ "$2" == "tunnels" ]] && list_tunnels || echo "usage: port list tunnels" ;;
+  reset) reset ;;
+  help|"") print_help ;;
+  *) echo -e "❓ ${RED}Unknown command:${RST} $1"; print_help ;;
 esac

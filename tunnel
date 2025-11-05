@@ -1,124 +1,149 @@
 #!/bin/bash
+# ======================================================================
+# 🚀 Strelix Cloud Tunnel Manager v2
+# Password-based Reverse SSH Tunnel Manager (autossh + sshpass)
+# One-command tunnel setup with no SSH key required.
+# Main Server: 157.254.189.32
+# ======================================================================
 
-# ========= CONFIG =========
-DB_FILE="/tmp/port_tunnels.db"
-SERVER="tunnel.strelix.xyz"
-USER="tunnel"
-PASS="Lw-T72q)L735Rwz+Iv"
-# ==========================
+# --- CONFIGURATION ---
+REMOTE_HOST="157.254.189.32"
+REMOTE_USER="tunnel1"
+REMOTE_PASS="naksh"
+SSH_PORT="22"
 
-mkdir -p /tmp
-touch "$DB_FILE"
+# --- COLORS & ICONS ---
+C_RESET='\033[0m'
+C_GREEN='\033[0;32m'
+C_RED='\033[0;31m'
+C_YELLOW='\033[0;33m'
+C_CYAN='\033[0;36m'
+C_WHITE='\033[1;37m'
 
-# 🎨 Colors
-RED="\e[31m"
-GRN="\e[32m"
-YEL="\e[33m"
-CYN="\e[36m"
-RST="\e[0m"
+OK="${C_GREEN}✅${C_RESET}"
+ERR="${C_RED}❌${C_RESET}"
+INFO="${C_CYAN}ℹ️${C_RESET}"
+STOP="${C_YELLOW}🛑${C_RESET}"
 
-banner() {
-  echo -e "${CYN}=============================="
-  echo -e "     StrelixCloud"
-  echo -e "==============================${RST}"
+usage() {
+  echo -e "${C_WHITE}🚀 Strelix Cloud Tunnel Manager${C_RESET}"
+  echo -e "------------------------------------------------------------"
+  echo -e "${C_CYAN}Usage:${C_RESET} $0 <command> [args]"
+  echo -e "Commands:"
+  echo -e "  ${C_YELLOW}make <LOCAL_PORT>${C_RESET}   - Create new tunnel (auto remote port)"
+  echo -e "  ${C_YELLOW}list${C_RESET}              - Show active tunnels"
+  echo -e "  ${C_YELLOW}kill <PID>${C_RESET}        - Stop tunnel by PID"
+  echo -e "  ${C_YELLOW}killall${C_RESET}           - Kill all tunnels"
+  echo -e "  ${C_YELLOW}setup-server${C_RESET}      - Setup tunnel server (run on ${REMOTE_HOST})"
+  echo -e "------------------------------------------------------------"
 }
 
-add_tunnel() {
+# --- Ensure dependencies ---
+ensure_tools() {
+  if ! command -v autossh >/dev/null || ! command -v sshpass >/dev/null; then
+    echo -e "${INFO} Installing dependencies..."
+    apt-get update -y && apt-get install -y autossh sshpass
+  fi
+}
+
+# --- Setup Server Side ---
+setup_server() {
+  echo -e "${INFO} Setting up Strelix Cloud tunnel server on $(hostname -I | awk '{print $1}')..."
+  USER="tunnel1"
+  PASS="naksh"
+  SSHD_CONFIG="/etc/ssh/sshd_config"
+
+  id "$USER" &>/dev/null || adduser --disabled-password --gecos "" "$USER"
+  echo "$USER:$PASS" | chpasswd
+
+  grep -q "AllowTcpForwarding yes" "$SSHD_CONFIG" || echo "AllowTcpForwarding yes" >> "$SSHD_CONFIG"
+  grep -q "GatewayPorts yes" "$SSHD_CONFIG" || echo "GatewayPorts yes" >> "$SSHD_CONFIG"
+  grep -q "PermitTunnel yes" "$SSHD_CONFIG" || echo "PermitTunnel yes" >> "$SSHD_CONFIG"
+
+  systemctl restart ssh
+  echo -e "${OK} Server ready for Strelix Cloud tunnels."
+  echo -e "${C_WHITE}User:${C_RESET} ${C_YELLOW}$USER${C_RESET} | ${C_WHITE}Pass:${C_RESET} ${C_YELLOW}$PASS${C_RESET}"
+}
+
+# --- Create Tunnel ---
+make_tunnel() {
+  ensure_tools
   LOCAL_PORT=$1
-  TMPFILE=$(mktemp)
-
-  sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
-  SSH_PID=$!
-
-  # wait up to 5s for port allocation
-  for i in {1..10}; do
-    if grep -q "Allocated port" "$TMPFILE"; then break; fi
-    sleep 0.5
-  done
-
-  if grep -q "Allocated port" "$TMPFILE"; then
-    REMOTE_PORT=$(grep "Allocated port" "$TMPFILE" | grep -oP '\d{4,5}' | head -n1)
-    echo "$LOCAL_PORT:$REMOTE_PORT:$SSH_PID" >> "$DB_FILE"
-    echo -e "✅ ${GRN}Tunnel created:${RST} localhost:${YEL}$LOCAL_PORT${RST} ➜ ${CYN}$SERVER:$REMOTE_PORT${RST} (pid $SSH_PID)"
-  else
-    echo -e "❌ ${RED}Tunnel failed!${RST} reason:"
-    grep -v "^Warning:" "$TMPFILE"
-    kill "$SSH_PID" 2>/dev/null
+  if [[ -z "$LOCAL_PORT" || ! "$LOCAL_PORT" =~ ^[0-9]+$ ]]; then
+    echo -e "${ERR} Invalid local port!"
+    exit 1
   fi
-  rm -f "$TMPFILE"
+  REMOTE_PORT=$((RANDOM % 55535 + 10000))
+  echo -e "${INFO} Creating tunnel: localhost:${LOCAL_PORT} → ${REMOTE_HOST}:${REMOTE_PORT}"
+
+  LOG="/tmp/strelix_tunnel_${REMOTE_PORT}.log"
+  sshpass -p "$REMOTE_PASS" autossh -M 0 -N \
+    -R ${REMOTE_PORT}:localhost:${LOCAL_PORT} \
+    -o StrictHostKeyChecking=no \
+    -o ServerAliveInterval=60 \
+    -o ServerAliveCountMax=3 \
+    ${REMOTE_USER}@${REMOTE_HOST} -p ${SSH_PORT} \
+    &> "$LOG" &
+
+  PID=$!
+  sleep 2
+  if ps -p $PID > /dev/null; then
+    echo -e "${OK} Tunnel active!"
+    echo -e "${C_WHITE}PID:${C_RESET} ${PID}"
+    echo -e "${C_WHITE}Remote Port:${C_RESET} ${REMOTE_PORT}"
+    echo -e "${C_WHITE}Access URL:${C_RESET} http://${REMOTE_HOST}:${REMOTE_PORT}"
+  else
+    echo -e "${ERR} Tunnel failed. Check log: ${LOG}"
+  fi
 }
 
-stop_tunnel() {
-  PORT=$1
-  TMP=$(mktemp)
-  FOUND=0
-  while IFS=: read -r LPORT RPORT PID; do
-    if [[ "$LPORT" == "$PORT" ]]; then
-      kill "$PID" 2>/dev/null
-      echo -e "🛑 ${RED}Stopped tunnel:${RST} localhost:$LPORT (remote $SERVER:$RPORT)"
-      FOUND=1
-    else
-      echo "$LPORT:$RPORT:$PID" >> "$TMP"
-    fi
-  done < "$DB_FILE"
-  mv "$TMP" "$DB_FILE"
-  [[ $FOUND -eq 0 ]] && echo -e "⚠️ ${YEL}No tunnel found for port $PORT${RST}"
-}
-
-stop_all() {
-  while IFS=: read -r LPORT RPORT PID; do
-    kill "$PID" 2>/dev/null
-    echo -e "🛑 ${RED}Killed tunnel:${RST} localhost:$LPORT (remote $SERVER:$RPORT)"
-  done < "$DB_FILE"
-
-  > "$DB_FILE"
-}
-
+# --- List Tunnels ---
 list_tunnels() {
-  if [[ ! -s "$DB_FILE" ]]; then
-    echo -e "ℹ️ ${YEL}No active tunnels right now.${RST}"
-    return
-  fi
-  echo -e "🔁 ${GRN}Active tunnels:${RST}"
-  while IFS=: read -r LPORT RPORT PID; do
-    if ps -p "$PID" > /dev/null 2>&1; then
-      echo -e " • ${CYN}$SERVER:$RPORT${RST} ➜ localhost:${YEL}$LPORT${RST} (pid $PID)"
-    else
-      echo -e " • ${CYN}$SERVER:$RPORT${RST} ➜ localhost:${YEL}$LPORT${RST} ${RED}(dead)${RST}"
-    fi
-  done < "$DB_FILE"
-}
-
-reset() {
-  echo -ne "⚠️ ${YEL}This will kill ALL ssh processes & wipe DB. Continue? (y/n): ${RST}"
-  read -r CONFIRM
-  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-    pkill -9 ssh 2>/dev/null
-    > "$DB_FILE"
-    echo -e "🧼 ${GRN}Reset complete${RST}"
+  PIDS=$(pgrep -af "autossh.*${REMOTE_HOST}")
+  if [ -z "$PIDS" ]; then
+    echo -e "${C_GREEN}No active Strelix Cloud tunnels.${C_RESET}"
   else
-    echo -e "🚫 ${RED}Reset cancelled${RST}"
+    echo -e "${C_WHITE}PID\t\tLocal → Remote${C_RESET}"
+    echo "$PIDS" | while read -r line; do
+      pid=$(echo "$line" | awk '{print $1}')
+      localp=$(echo "$line" | sed -n 's/.*localhost:\([0-9]*\).*/\1/p')
+      remotep=$(echo "$line" | sed -n 's/.*-R \([0-9]*\):.*/\1/p')
+      echo -e "${C_YELLOW}${pid}${C_RESET}\t\t${C_CYAN}${localp}${C_RESET} → ${C_GREEN}${REMOTE_HOST}:${remotep}${C_RESET}"
+    done
   fi
 }
 
-print_help() {
-  banner
-  echo "usage:"
-  echo "  port add <local_port>     - create tunnel (remote port auto-alloc)"
-  echo "  port stop <local_port>    - stop specific tunnel"
-  echo "  port stop all             - kill all tunnels"
-  echo "  port list tunnels         - show active tunnels"
-  echo "  port reset                - kill ALL ssh procs + wipe DB"
-  echo "  port help                 - show this help"
+# --- Kill Tunnel by PID ---
+kill_tunnel() {
+  PID=$1
+  if [ -z "$PID" ]; then
+    echo -e "${ERR} Provide a PID."
+    exit 1
+  fi
+  if ps -p $PID > /dev/null; then
+    kill $PID && echo -e "${OK} Tunnel ${PID} stopped."
+  else
+    echo -e "${ERR} No such PID."
+  fi
 }
 
-# ========= Main =========
+# --- Kill All Tunnels ---
+kill_all() {
+  PIDS=$(pgrep -f "autossh.*${REMOTE_HOST}")
+  if [ -z "$PIDS" ]; then
+    echo -e "${C_GREEN}No active tunnels.${C_RESET}"
+  else
+    echo -e "${STOP} Stopping all Strelix Cloud tunnels..."
+    kill $PIDS && echo -e "${OK} All tunnels stopped."
+  fi
+}
+
+# --- Command Handler ---
 case "$1" in
-  add)   [[ -n "$2" ]] && add_tunnel "$2" || echo "usage: port add <local_port>" ;;
-  stop)  [[ "$2" == "all" ]] && stop_all || [[ -n "$2" ]] && stop_tunnel "$2" || echo "usage: port stop <local_port|all>" ;;
-  list)  [[ "$2" == "tunnels" ]] && list_tunnels || echo "usage: port list tunnels" ;;
-  reset) reset ;;
-  help|"") print_help ;;
-  *) echo -e "❓ ${RED}Unknown command:${RST} $1"; print_help ;;
+  make) make_tunnel "$2" ;;
+  list) list_tunnels ;;
+  kill) kill_tunnel "$2" ;;
+  killall) kill_all ;;
+  setup-server) setup_server ;;
+  *) usage ;;
 esac

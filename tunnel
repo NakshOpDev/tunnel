@@ -3,11 +3,11 @@
 # 🚀 Strelix Cloud Tunnel Manager v2
 # Password-based Reverse SSH Tunnel Manager (autossh + sshpass)
 # One-command tunnel setup with no SSH key required.
-# Main Server: 157.254.189.32
+# Main Server: 162.141.0.90
 # ======================================================================
 
 # --- CONFIGURATION ---
-REMOTE_HOST="157.254.189.32"
+REMOTE_HOST="162.141.0.90"
 REMOTE_USER="tunnel1"
 REMOTE_PASS="naksh"
 SSH_PORT="22"

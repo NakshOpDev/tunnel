@@ -7,10 +7,10 @@
 # ======================================================================
 
 # --- CONFIGURATION ---
-REMOTE_HOST="free-in1.halix.cloud"
+REMOTE_HOST="mc-usa1.halix-free.xyz"
 REMOTE_USER="tunnel1"
 REMOTE_PASS="naksh"
-SSH_PORT="22"
+SSH_PORT="2912"
 
 # --- COLORS & ICONS ---
 C_RESET='\033[0m'

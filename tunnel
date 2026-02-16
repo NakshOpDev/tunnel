@@ -1,13 +1,13 @@
 #!/bin/bash
 # ======================================================================
-# 🚀 Halix Cloud Tunnel Manager v2
+# 🚀 Akisa Tunnel Manager 
 # Password-based Reverse SSH Tunnel Manager (autossh + sshpass)
 # One-command tunnel setup with no SSH key required.
-# Main Server: connect.halix-free.xyz
+# Main Server: ssh.akisa-is.dev
 # ======================================================================
 
 # --- CONFIGURATION ---
-REMOTE_HOST="connect.halix-free.xyz"
+REMOTE_HOST="ssh.akisa-is.dev"
 REMOTE_USER="tunnel1"
 REMOTE_PASS="naksh"
 SSH_PORT="22"
@@ -26,7 +26,7 @@ INFO="${C_CYAN}ℹ️${C_RESET}"
 STOP="${C_YELLOW}🛑${C_RESET}"
 
 usage() {
-  echo -e "${C_WHITE}🚀 Halix Cloud Tunnel Manager${C_RESET}"
+  echo -e "${C_WHITE}🚀 Akisa Tunnel Manager${C_RESET}"
   echo -e "------------------------------------------------------------"
   echo -e "${C_CYAN}Usage:${C_RESET} $0 <command> [args]"
   echo -e "Commands:"

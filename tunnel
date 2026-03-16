@@ -7,7 +7,7 @@
 # ======================================================================
 
 # --- CONFIGURATION ---
-REMOTE_HOST="ssh.akisa-is.dev"
+REMOTE_HOST="57.129.67.85"
 REMOTE_USER="tunnel1"
 REMOTE_PASS="naksh"
 SSH_PORT="22"

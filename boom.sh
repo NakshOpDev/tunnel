@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REMOTE_HOST="free-in1.halix.cloud"
+REMOTE_HOST="45.13.239.213"
 REMOTE_USER="tunnel1"
 REMOTE_PASS="naksh"
 
